@@ -45,6 +45,8 @@ int updatescreen = 1;
 
 uint8 largebuf[64*1024];
 
+void
+log_to_file(char *log_string);
 
 enum {
 	/* TV to 11 */
@@ -79,6 +81,14 @@ b2w(uint8 *b)
 void
 w2b(uint8 *b, uint16 w)
 {
+	// Log key presses
+	if (b == (largebuf + 3)) {
+		char message_buffer[1024];
+		memset(message_buffer, '\0', 1024);
+		sprintf(message_buffer, "w2b: %i\n", w);
+		log_to_file(message_buffer);
+	}
+
 	b[0] = w;
 	b[1] = w>>8;
 }
@@ -487,15 +497,48 @@ texty_symbol(int key)
 	return 1;
 }
 
+int use_scancode = 1;
+
+char *logfile_name = "/home/rett/dev/common-lisp/its/its/tvcon-keylog.log";
+FILE *fd = 0;
+
+void
+log_to_file(char *log_string)
+{
+	if (!fd) {
+		fd = fopen(logfile_name, "w+");
+	}
+	int results = fputs(log_string, fd);
+	// Since we're an error handler, not much we can do except ignore.
+	if (results != EOF) {
+		fflush(fd);
+	}
+}
+
+SDL_Scancode
+provide_scancode(SDL_Keysym keysym)
+{
+	SDL_Scancode computed_scancode = SDL_GetScancodeFromKey(keysym.sym);
+	char char_buffer[1024];
+	memset(char_buffer, 0, 1024);
+	// Danger! buffer overflow.
+	sprintf(char_buffer, "Computed scancode: %i, keysym.scancode: %i\n",
+	       computed_scancode,
+	       keysym.scancode);
+	// log_to_file(char_buffer);
+	return use_scancode ? keysym.scancode : computed_scancode;
+}
+
 void
 keydown(SDL_Keysym keysym, Uint8 repeat)
 {
 	int key;
+	SDL_Scancode scancode = provide_scancode(keysym);
 
-	if(ctrlslock && keysym.scancode == SDL_SCANCODE_CAPSLOCK)
-		keysym.scancode = SDL_SCANCODE_LCTRL;
+	if(ctrlslock && scancode == SDL_SCANCODE_CAPSLOCK)
+		scancode = SDL_SCANCODE_LCTRL;
 
-	if(keysym.scancode == SDL_SCANCODE_F8){
+	if(scancode == SDL_SCANCODE_F8){
 		fullscreen = !fullscreen;
 		SDL_SetWindowFullscreen(window, screenmodes[fullscreen]);
 		resize();
@@ -503,7 +546,7 @@ keydown(SDL_Keysym keysym, Uint8 repeat)
 
 	if(modmap){
 		/* Map RALT to TOP and ignore windows key */
-		switch(keysym.scancode){
+		switch(scancode){
 		case SDL_SCANCODE_LSHIFT: curmod |= MOD_LSHIFT; break;
 		case SDL_SCANCODE_RSHIFT: curmod |= MOD_RSHIFT; break;
 		case SDL_SCANCODE_LCTRL: curmod |= MOD_LCTRL; break;
@@ -514,7 +557,7 @@ keydown(SDL_Keysym keysym, Uint8 repeat)
 		if(keystate[SDL_SCANCODE_LGUI] || keystate[SDL_SCANCODE_RGUI])
 			return;
 	}else
-		switch(keysym.scancode){
+		switch(scancode){
 		case SDL_SCANCODE_LSHIFT: curmod |= MOD_LSHIFT; break;
 		case SDL_SCANCODE_RSHIFT: curmod |= MOD_RSHIFT; break;
 		case SDL_SCANCODE_LGUI: curmod |= MOD_LTOP; break;
@@ -525,7 +568,7 @@ keydown(SDL_Keysym keysym, Uint8 repeat)
 		case SDL_SCANCODE_RALT: curmod |= MOD_RMETA; break;
 		}
 
-	if(keysym.scancode == SDL_SCANCODE_F11 && !repeat){
+	if(scancode == SDL_SCANCODE_F11 && !repeat){
 		uint32 f = SDL_GetWindowFlags(window) &
 			SDL_WINDOW_FULLSCREEN_DESKTOP;
 		SDL_SetWindowFullscreen(window,
@@ -534,10 +577,10 @@ keydown(SDL_Keysym keysym, Uint8 repeat)
 
 	// Some, but not all, keys come as both KeyboardEvent and
 	// TextInput. Ignore the latter kind here.
-	if(texty(keysym.scancode))
+	if(texty(scancode))
 		return;
 
-	key = scancodemap[keysym.scancode];
+	key = scancodemap[scancode];
 	if(key < 0)
 		return;
 
@@ -552,12 +595,16 @@ keydown(SDL_Keysym keysym, Uint8 repeat)
 void
 keyup(SDL_Keysym keysym)
 {
-	if(ctrlslock && keysym.scancode == SDL_SCANCODE_CAPSLOCK)
-		keysym.scancode = SDL_SCANCODE_LCTRL;
+	SDL_Scancode scancode = use_scancode ?
+		SDL_GetScancodeFromKey(keysym.sym) :
+		keysym.scancode;
+
+	if(ctrlslock && scancode == SDL_SCANCODE_CAPSLOCK)
+		scancode = SDL_SCANCODE_LCTRL;
 
 	if(modmap)
 		/* Map RALT to TOP and ignore windows key */
-		switch(keysym.scancode){
+		switch(scancode){
 		case SDL_SCANCODE_LSHIFT: curmod &= ~MOD_LSHIFT; break;
 		case SDL_SCANCODE_RSHIFT: curmod &= ~MOD_RSHIFT; break;
 		case SDL_SCANCODE_LCTRL: curmod &= ~MOD_LCTRL; break;
@@ -567,7 +614,7 @@ keyup(SDL_Keysym keysym)
 		case SDL_SCANCODE_CAPSLOCK: curmod ^= MOD_SLOCK; break;
 		}
 	else
-		switch(keysym.scancode){
+		switch(scancode){
 		case SDL_SCANCODE_LSHIFT: curmod &= ~MOD_LSHIFT; break;
 		case SDL_SCANCODE_RSHIFT: curmod &= ~MOD_RSHIFT; break;
 		case SDL_SCANCODE_LGUI: curmod &= ~MOD_LTOP; break;
@@ -578,7 +625,7 @@ keyup(SDL_Keysym keysym)
 		case SDL_SCANCODE_RALT: curmod &= ~MOD_RMETA; break;
 		case SDL_SCANCODE_CAPSLOCK: curmod ^= MOD_SLOCK; break;
 		}
-//	printf("up: %d %o %o\n", keysym.scancode, scancodemap[keysym.scancode], curmod);
+//	printf("up: %d %o %o\n", scancode, scancodemap[scancode], curmod);
 }
 
 void
@@ -718,6 +765,86 @@ usage(void)
 	exit(0);
 }
 
+
+
+// Keyboard Events
+//
+// To map physical keyboard key presses to a simulated Knight
+// keyboard, its sufficient to use SDL's SDL_KEYDOWN and SDL_KEYUP
+// events. SDL provides other events about what's being typed on the
+// keyboard, e.g. SDL_TextEditingEvent and SDL_TextInputEvent, but for
+// our purpes these aren't needed, and combining those events can
+// introduce subtle timing errors unless great care is taken.
+//
+// SDL's key SDL_KEYUP and SDL_KEYDOWN provide both information on the
+// physical key that was pressed (SDL_Scancode) and on how the
+// operating system has interpreted that key based on the current
+// keymap (SDL_Keycode also refered to as 'key symbol'). But it should
+// be noted that neither of them correspond exactly to the various
+// levels of key mapping in X11's xkb system (e.g. geometry, keycodes,
+// rules, symbols, etc.)
+//
+// Conceptually what we want to do is to translate SDL key symbols
+// into physical operations on a standard keyboard and then apply a
+// mapping of a modern day PC keyboard to a virtual Knight keyboard
+// and emulate the bits that keyboard would have produced. Both of
+// these tasks are relatively straight-forward and can be accomplished
+// using just the information produced by SDL_KEYUP and SDL_KEYDOWN
+// event and the fields sym (SDL_Keycode) and mod (SDL_Keymod) from
+// the SDL_Keysym structure attached to those events.
+//
+// Translating SDL Key Symbols into Physical Keyboard Opperations
+//
+// SDL's notion of a key is somewhat different than xkb. In xkb an
+// symbol can be mapped to any an key plus modifiers combination. For
+// example, 'b' could be mapped to CTRL+ALT+AC01 where AC01 is the
+// physical location of the key to the immediate right of the 'Caps'
+// key, labeled 'A' on the standard PC keyboard. SDL doesn't allow
+// that level of flexibility, either with scancodes or with key
+// symbols. In particular SDL considers all alphebetic keys to be
+// either lowercase when not modified by KMOD_SHIFT, or uppercase when
+// KMOD_SHIFT is set in the mod field. However, all non-alphabetic
+// symbols (.e.g. '&', '1' or even the modifier KMOD_LCTRL) are
+// considered their own phisical key. So, as an example '!' is not
+// KMOD_SHIFT+1, but rather KMOD_SHIFT+!. The practical result of this
+// is that we ignore KMOD_LSHIFT and KMOD_RSHIFT key for all
+// non-alphabetic key events, and synthesize the appropriate shift for
+// all other keys as appropriate for the Knight keyboard, e.g.
+//
+// KMOD_LSHIFT+! => ! => SHIFT+1
+//
+// Hopefully this is only a pathological corner case, and would not
+// effect real keyboard mappings, either international or alternate
+// layouts like the Dvorak.
+
+void
+log_event(SDL_Event event) {
+	switch (event.type) {
+	case SDL_TEXTINPUT:
+		log_to_file("recieved SDL_TEXTINPUT event. Ignoring...\n");
+		break;
+	case SDL_KEYDOWN:
+	case SDL_KEYUP:
+	{
+		char message_buffer[1024];
+		memset(message_buffer, '\0', 1024);
+		#define FORMAT_STRING "key symbol: %i, mod: %o\n"
+		// Should we ignore on (event.key.repeat != 0) or
+		// perhaps only acknowlege every 5th or 10th one, so
+		// as to not overwhelm our PDP-11?
+		sprintf(message_buffer,
+			(event.type == SDL_KEYDOWN) ?
+			"SDL_KEYDOWN, " FORMAT_STRING :
+			"SDL_KEYUP, " FORMAT_STRING,
+			event.key.keysym.sym,
+			event.key.keysym.mod);
+		log_to_file(message_buffer);
+	}
+	break;
+	}
+}
+
+
 int
 main(int argc, char *argv[])
 {
@@ -805,6 +932,7 @@ main(int argc, char *argv[])
 	while(running){
 		if(SDL_WaitEvent(&event) < 0)
 			panic("SDL_PullEvent() error: %s\n", SDL_GetError());
+		log_event(event);
 		switch(event.type){
 		case SDL_MOUSEBUTTONDOWN:
 			break;
@@ -851,5 +979,10 @@ main(int argc, char *argv[])
 		}
 
 	}
+	// Close log file if we opened one.
+	if (fd) {
+		fclose(fd);
+	}
+
 	return 0;
 }
