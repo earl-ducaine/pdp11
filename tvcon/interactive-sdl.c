@@ -44,6 +44,7 @@
 #include "xkbcommon/xkbcommon.h"
 
 #include "tools-common.h"
+#include "interactive-sdl.h"
 
 struct keyboard {
     struct xkb_state *state;
@@ -179,7 +180,7 @@ loop(struct keyboard *kbd)
 
 
 int
-main(int argc, char *argv[])
+interactive_sdl(int argc, char *argv[])
 {
     int ret = EXIT_FAILURE;
     // struct keyboard *kbds;
