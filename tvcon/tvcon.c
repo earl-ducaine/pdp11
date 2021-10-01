@@ -499,7 +499,7 @@ texty_symbol(int key)
 
 int use_scancode = 1;
 
-char *logfile_name = "/home/rett/dev/common-lisp/its/its/tvcon-keylog.log";
+char *logfile_name = "/home/rett/dev/common-lisp/its/its-skull-dev-remote/its/tvcon-keylog.log";
 FILE *fd = 0;
 
 void
@@ -580,7 +580,18 @@ keydown(SDL_Keysym keysym, Uint8 repeat)
 	if(texty(scancode))
 		return;
 
-	key = scancodemap[scancode];
+	// key = scancodemap[scancode];
+	key = scancodemap[SDL_GetScancodeFromKey(keysym.sym)];
+
+	char message_buffer[1024];
+	memset(message_buffer, '\0', 1024);
+	sprintf(message_buffer,
+		"Control character? key: %i, scancode: %i\n",
+		keysym.scancode,
+		SDL_GetScancodeFromKey(keysym.sym));
+		
+	log_to_file(message_buffer);
+
 	if(key < 0)
 		return;
 
@@ -820,8 +831,12 @@ usage(void)
 void
 log_event(SDL_Event event) {
 	switch (event.type) {
-	case SDL_TEXTINPUT:
-		log_to_file("recieved SDL_TEXTINPUT event. Ignoring...\n");
+	case SDL_TEXTINPUT:  {
+	        // Unsafe string handling! 
+	        char buffer[1024];
+		sprintf(buffer, "textinput: %s\n", event.text.text);
+		log_to_file(buffer);
+	        }
 		break;
 	case SDL_KEYDOWN:
 	case SDL_KEYUP:
