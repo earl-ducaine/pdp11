@@ -46,11 +46,8 @@
 #include "tools-common.h"
 
 struct keyboard {
-    // char *path;
-    // int fd;
     struct xkb_state *state;
     struct xkb_compose_state *compose_state;
-    // struct keyboard *next;
 };
 
 // static bool terminate;
@@ -59,71 +56,13 @@ static bool report_state_changes;
 static bool with_compose;
 static enum xkb_consumed_mode consumed_mode = XKB_CONSUMED_MODE_XKB;
 
-#define NLONGS(n) (((n) + LONG_BIT - 1) / LONG_BIT)
-
-// static bool
-// evdev_bit_is_set(const unsigned long *array, int bit)
-// {
-//     return array[bit / LONG_BIT] & (1LL << (bit % LONG_BIT));
-// }
-
-/* Some heuristics to see if the device is a keyboard. */
-// static bool
-// is_keyboard(int fd)
-// {
-//     int i;
-//     unsigned long evbits[NLONGS(EV_CNT)] = { 0 };
-//     unsigned long keybits[NLONGS(KEY_CNT)] = { 0 };
-
-//     errno = 0;
-//     ioctl(fd, EVIOCGBIT(0, sizeof(evbits)), evbits);
-//     if (errno)
-//         return false;
-
-//     if (!evdev_bit_is_set(evbits, EV_KEY))
-//         return false;
-
-//     errno = 0;
-//     ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(keybits)), keybits);
-//     if (errno)
-//         return false;
-
-//     for (i = KEY_RESERVED; i <= KEY_MIN_INTERESTING; i++)
-//         if (evdev_bit_is_set(keybits, i))
-//             return true;
-
-//     return false;
-// }
-
-// static int
-// keyboard_new(struct dirent *ent, struct xkb_keymap *keymap,
-//              struct xkb_compose_table *compose_table, struct keyboard *out)
 static int
 keyboard_new(struct xkb_keymap *keymap,
              struct xkb_compose_table *compose_table, struct keyboard *out)
 {
     int ret;
-    // char *path;
-    // int fd;
     struct xkb_state *state;
     struct xkb_compose_state *compose_state = NULL;
-    // struct keyboard *kbd;
-
-    // ret = asprintf(&path, "/dev/input/%s", ent->d_name);
-    // if (ret < 0)
-    //     return -ENOMEM;
-
-    // fd = open(path, O_NONBLOCK | O_CLOEXEC | O_RDONLY);
-    // if (fd < 0) {
-    //     ret = -errno;
-    //     goto err_path;
-    // }
-
-    // if (!is_keyboard(fd)) {
-    //     /* Dummy "skip this device" value. */
-    //     ret = -ENOTSUP;
-    //     goto err_fd;
-    // }
 
     state = xkb_state_new(keymap);
     if (!state) {
@@ -142,113 +81,28 @@ keyboard_new(struct xkb_keymap *keymap,
         }
     }
 
-    // kbd = calloc(1, sizeof(*kbd));
-    // if (!kbd) {
-    //     ret = -ENOMEM;
-    //     goto err_compose_state;
-    // }
-
-    // kbd->path = path;
-    // kbd->fd = fd;
     out->state = state;
     out->compose_state = compose_state;
-    // *out = kbd;
     return 0;
 
-// err_compose_state:
     xkb_compose_state_unref(compose_state);
 err_state:
     xkb_state_unref(state);
 err_fd:
-//     close(fd);
-// err_path:
-//     free(path);
     return ret;
 }
-
-// static void
-// keyboard_free(struct keyboard kbd)
-// {
-//     if (!kbd)
-//         return;
-//     // if (kbd->fd >= 0)
-//     //     close(kbd->fd);
-//     // free(kbd->path);
-//     xkb_state_unref(kbd->state);
-//     xkb_compose_state_unref(kbd->compose_state);
-//     // free(kbd);
-// }
-
-// static int
-// filter_device_name(const struct dirent *ent)
-// {
-//     return !fnmatch("event*", ent->d_name, 0);
-// }
 
 static void get_keyboards(struct xkb_keymap *keymap,
 		   struct xkb_compose_table *compose_table,
 		   struct keyboard *kbd)
 {
-  // int ret, i, nents;
   int ret;
-    // struct dirent **ents;
-    // struct keyboard *kbds = NULL, kbd;
 
-    // nents = scandir("/dev/input", &ents, filter_device_name, alphasort);
-    // if (nents < 0) {
-    //     fprintf(stderr, "Couldn't scan /dev/input: %s\n", strerror(errno));
-    //     return NULL;
-    // }
-
-    // for (i = 0; i < nents; i++) {
         ret = keyboard_new(keymap, compose_table, kbd);
         if (ret) {
 	  fprintf(stderr, "Couldn't open Skipping.\n");
-            // if (ret == -EACCES) {
-            //     fprintf(stderr, "Couldn't open /dev/input/%s: %s. "
-            //                     "You probably need root to run this.\n",
-            //             ents[i]->d_name, strerror(-ret));
-            //     // break;
-            // }
-            // if (ret != -ENOTSUP) {
-            //     fprintf(stderr, "Couldn't open /dev/input/%s: %s. Skipping.\n",
-            //             ents[i]->d_name, strerror(-ret));
-            // }
-            // continue;
         }
-
-        // assert(kbd != NULL);
-        // kbd->next = kbds;
-        // kbds = kbd;
-    // }
-
-    // if (!kbds) {
-    //     fprintf(stderr, "Couldn't find any keyboards I can use! Quitting.\n");
-    //     goto err;
-    // }
-
-// err:
-    // for (i = 0; i < nents; i++)
-    //     free(ents[i]);
-    // free(ents);
 }
-
-// static void
-// free_keyboards(struct keyboard *kbds)
-// {
-//     // struct keyboard *next;
-
-//     // while (kbds) {
-//         // next = kbds->next;
-//         keyboard_free(kbds);
-//         // kbds = next;
-//     // }
-// }
-
-
-
-
-
 
 /* The meaning of the input_event 'value' field. */
 enum {
@@ -298,113 +152,31 @@ process_event(struct keyboard *kbd, uint16_t type, uint16_t code, int32_t value)
         tools_print_state_changes(changed);
 }
 
-
-// void synthesize_event(&evs) {
-// }
-
-// time  -- time of event
-// type  -- ev_rel ev_key
-// code  -- scan code
-// value -- repeat, press release
-// struct input_event {
-//         struct timeval time;
-//         unsigned short type;
-//         unsigned short code;
-//         unsigned int value;
-// };
-
 static int
 read_keyboard(struct keyboard *kbd)
 {
-    /* ssize_t len; */
     struct input_event evs;
 
     /* No fancy error checking here. */
-    // while ((len = read(kbd->fd, &evs, sizeof(evs))) > 0) {
-    // synthesize_event(kbd->fd, &evs);
     evs.type = EV_KEY;
     evs.code = 10;
     evs.value = KEY_STATE_PRESS;
-        // for (size_t i = 0; i < nevs; i++)
     process_event(kbd, evs.type, evs.code, evs.value);
-    // }
-
-    // if (len < 0 && errno != EWOULDBLOCK) {
-    //     fprintf(stderr, "Couldn't read %s: %s\n", kbd->path, strerror(errno));
-    //     return 1;
-    // }
 
     return 0;
 }
-
 
 
 static int
 loop(struct keyboard *kbd)
 {
     int ret = -1;
-    // nfds_t nfds, i;
-    // struct pollfd *fds = NULL;
 
-    // for (kbd = kbds, nfds = 0; kbd; kbd = kbd->next, nfds++) {}
-    // fds = calloc(nfds, sizeof(*fds));
-    // if (fds == NULL) {
-    //     fprintf(stderr, "Out of memory");
-    //     goto out;
-    // }
-
-    // for (i = 0, kbd = kbds; kbd; kbd = kbd->next, i++) {
-    //     fds[i].fd = kbd->fd;
-    //     fds[i].events = POLLIN;
-    // }
-
-    // while (!terminate) {
-        // ret = poll(fds, nfds, -1);
-        // if (ret < 0) {
-        //     if (errno == EINTR)
-        //         continue;
-        //     fprintf(stderr, "Couldn't poll for events: %s\n",
-        //             strerror(errno));
-        //     goto out;
-        // }
-
-        // for (i = 0, kbd = kbds; kbd; kbd = kbd->next, i++) {
-        //     if (fds[i].revents != 0) {
     ret = read_keyboard(kbd);
-        //         if (ret) {
-        //             goto out;
-        //         }
-        //     }
-        // }
-    // }
-
     ret = 0;
-// out:
-    // free(fds);
     return ret;
 }
 
-// static void
-// sigintr_handler()
-// {
-//     terminate = true;
-// }
-
-static void
-usage(FILE *fp, char *progname)
-{
-        fprintf(fp, "Usage: %s [--rules=<rules>] [--model=<model>] "
-                "[--layout=<layout>] [--variant=<variant>] [--options=<options>]\n",
-                progname);
-        fprintf(fp, "      or: %s --keymap <path to keymap file>\n",
-                progname);
-        fprintf(fp, "For both:\n"
-                        "          --report-state-changes (report changes to the state)\n"
-                        "          --enable-compose (enable Compose)\n"
-                        "          --consumed-mode={xkb|gtk} (select the consumed modifiers mode, default: xkb)\n"
-                        "          --without-x11-offset (don't add X11 keycode offset)\n"
-        );
-}
 
 int
 main(int argc, char *argv[])
@@ -492,18 +264,8 @@ main(int argc, char *argv[])
                 consumed_mode = XKB_CONSUMED_MODE_GTK;
             } else if (strcmp(optarg, "xkb") == 0) {
                 consumed_mode = XKB_CONSUMED_MODE_XKB;
-            } else {
-                fprintf(stderr, "error: invalid --consumed-mode \"%s\"\n", optarg);
-                usage(stderr, argv[0]);
-                return EXIT_INVALID_USAGE;
-            }
+            } 
             break;
-        case 'h':
-            usage(stdout, argv[0]);
-            return EXIT_SUCCESS;
-        case '?':
-            usage(stderr, argv[0]);
-            return EXIT_INVALID_USAGE;
         }
     }
 
