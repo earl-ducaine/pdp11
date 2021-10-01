@@ -53,7 +53,7 @@ struct keyboard {
     // struct keyboard *next;
 };
 
-static bool terminate;
+// static bool terminate;
 static int evdev_offset = 8;
 static bool report_state_changes;
 static bool with_compose;
@@ -384,11 +384,11 @@ loop(struct keyboard *kbd)
     return ret;
 }
 
-static void
-sigintr_handler(int signum)
-{
-    terminate = true;
-}
+// static void
+// sigintr_handler()
+// {
+//     terminate = true;
+// }
 
 static void
 usage(FILE *fp, char *progname)
@@ -569,7 +569,7 @@ main(int argc, char *argv[])
     //     goto out;
     // }
 
-    act.sa_handler = sigintr_handler;
+    // act.sa_handler = sigintr_handler;
     sigemptyset(&act.sa_mask);
     act.sa_flags = 0;
     /* sigaction(SIGINT, &act, NULL); */
