@@ -499,7 +499,7 @@ texty_symbol(int key)
 
 int use_scancode = 1;
 
-char *logfile_name = "/home/rett/dev/common-lisp/its/its-skull-dev-remote/its/tvcon-keylog.log";
+char *logfile_name = "/home/rett/dev/common-lisp/its/its/tvcon-keylog.log";
 FILE *fd = 0;
 
 void
