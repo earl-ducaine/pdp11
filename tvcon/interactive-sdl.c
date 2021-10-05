@@ -113,17 +113,13 @@ enum {
 };
 
 static void
-process_event(struct keyboard *kbd, uint16_t type, uint16_t code, int32_t value)
+process_event(struct keyboard *kbd, uint16_t code, int32_t value)
 {
-    xkb_keycode_t keycode;
+    xkb_keycode_t keycode = evdev_offset + code;
     struct xkb_keymap *keymap;
     enum xkb_state_component changed;
     enum xkb_compose_status status;
 
-    if (type != EV_KEY)
-        return;
-
-    keycode = evdev_offset + code;
     keymap = xkb_state_get_keymap(kbd->state);
 
     if (value == KEY_STATE_REPEAT && !xkb_keymap_key_repeats(keymap, keycode))
@@ -153,40 +149,17 @@ process_event(struct keyboard *kbd, uint16_t type, uint16_t code, int32_t value)
         tools_print_state_changes(changed);
 }
 
-static int
-read_keyboard(struct keyboard *kbd)
-{
-    struct input_event evs;
 
-    /* No fancy error checking here. */
-    evs.type = EV_KEY;
-    evs.code = 10;
-    evs.value = KEY_STATE_PRESS;
-    process_event(kbd, evs.type, evs.code, evs.value);
-
-    return 0;
-}
-
-
-static int
-loop(struct keyboard *kbd)
-{
-    int ret = -1;
-
-    ret = read_keyboard(kbd);
-    ret = 0;
-    return ret;
-}
-
+struct keyboard g_kbd;
+struct xkb_context *g_ctx = NULL;
+struct xkb_compose_table *g_compose_table = NULL;
+struct xkb_keymap *g_keymap = NULL;
 
 int
-interactive_sdl(int argc, char *argv[])
+interactive_sdl_init(int argc, char *argv[])
 {
     int ret = EXIT_FAILURE;
     // struct keyboard *kbds;
-    struct xkb_context *ctx = NULL;
-    struct xkb_keymap *keymap = NULL;
-    struct xkb_compose_table *compose_table = NULL;
     const char *rules = NULL;
     const char *model = NULL;
     const char *layout = NULL;
@@ -270,8 +243,8 @@ interactive_sdl(int argc, char *argv[])
         }
     }
 
-    ctx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
-    if (!ctx) {
+    g_ctx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+    if (!g_ctx) {
         fprintf(stderr, "Couldn't create xkb context\n");
         goto out;
     }
@@ -283,7 +256,7 @@ interactive_sdl(int argc, char *argv[])
                     keymap_path, strerror(errno));
             goto out;
         }
-        keymap = xkb_keymap_new_from_file(ctx, file,
+        g_keymap = xkb_keymap_new_from_file(g_ctx, file,
                                           XKB_KEYMAP_FORMAT_TEXT_V1,
                                           XKB_KEYMAP_COMPILE_NO_FLAGS);
         fclose(file);
@@ -298,11 +271,11 @@ interactive_sdl(int argc, char *argv[])
         };
 
         if (!rules && !model && !layout && !variant && !options)
-            keymap = xkb_keymap_new_from_names(ctx, NULL, 0);
+            g_keymap = xkb_keymap_new_from_names(g_ctx, NULL, 0);
         else
-            keymap = xkb_keymap_new_from_names(ctx, &rmlvo, 0);
+            g_keymap = xkb_keymap_new_from_names(g_ctx, &rmlvo, 0);
 
-        if (!keymap) {
+        if (!g_keymap) {
             fprintf(stderr,
                     "Failed to compile RMLVO: '%s', '%s', '%s', '%s', '%s'\n",
                     rules, model, layout, variant, options);
@@ -310,24 +283,23 @@ interactive_sdl(int argc, char *argv[])
         }
     }
 
-    if (!keymap) {
+    if (!g_keymap) {
         fprintf(stderr, "Couldn't create xkb keymap\n");
         goto out;
     }
 
     if (with_compose) {
         locale = setlocale(LC_CTYPE, NULL);
-        compose_table =
-            xkb_compose_table_new_from_locale(ctx, locale,
+        g_compose_table =
+            xkb_compose_table_new_from_locale(g_ctx, locale,
                                               XKB_COMPOSE_COMPILE_NO_FLAGS);
-        if (!compose_table) {
+        if (!g_compose_table) {
             fprintf(stderr, "Couldn't create compose from locale\n");
             goto out;
         }
     }
 
-    struct keyboard kbd;
-    get_keyboards(keymap, compose_table, &kbd);
+    get_keyboards(g_keymap, g_compose_table, &g_kbd);
     // if (!kbds) {
     //     goto out;
     // }
@@ -338,18 +310,32 @@ interactive_sdl(int argc, char *argv[])
     /* sigaction(SIGINT, &act, NULL); */
     /* sigaction(SIGTERM, &act, NULL); */
 
-    tools_disable_stdin_echo();
-    ret = loop(&kbd);
-    tools_enable_stdin_echo();
-
-    xkb_state_unref(kbd.state);
-    xkb_compose_state_unref(kbd.compose_state);
-
-    // keyboard_free(kbd);
-out:
-    xkb_compose_table_unref(compose_table);
-    xkb_keymap_unref(keymap);
-    xkb_context_unref(ctx);
+ out:
+    xkb_compose_table_unref(g_compose_table);
+    xkb_keymap_unref(g_keymap);
+    xkb_context_unref(g_ctx);
 
     return ret;
+}
+
+int
+interactive_sdl_translate()
+{
+
+  tools_disable_stdin_echo();
+  process_event(&g_kbd, EV_KEY, 10, KEY_STATE_PRESS);
+    tools_enable_stdin_echo();
+
+    xkb_state_unref(g_kbd.state);
+    xkb_compose_state_unref(g_kbd.compose_state);
+
+    // keyboard_free(kbd);
+    printf("all done outputting transaltion!");
+
+out:
+    xkb_compose_table_unref(g_compose_table);
+    xkb_keymap_unref(g_keymap);
+    xkb_context_unref(g_ctx);
+
+    return 0;
 }

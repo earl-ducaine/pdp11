@@ -4,7 +4,10 @@
 #define INTERACTIVE_SDL_H
 
 int
-interactive_sdl(int argc, char *argv[]);
+interactive_sdl_init(int argc, char *argv[]);
+
+int
+interactive_sdl_translate();
 
 
 
