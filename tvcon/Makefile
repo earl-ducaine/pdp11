@@ -1,4 +1,4 @@
-CFLAGS=-g -O3 `sdl2-config --cflags`
+CFLAGS=-ggdb -O3 `sdl2-config --cflags`
 LDLIBS=`sdl2-config --libs` -lSDL2_net -lxkbcommon
 
 all: tvcon interactive-sdl-main
@@ -6,7 +6,7 @@ all: tvcon interactive-sdl-main
 tvcon.o:
 tools-common.o:
 interactive-sdl.o:
-interactive-sdl-main.o:
+interactive-sdl-main.o: interactive-sdl.h
 
 tvcon: tvcon.o tools-common.o interactive-sdl.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDLIBS)

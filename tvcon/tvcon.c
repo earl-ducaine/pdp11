@@ -10,18 +10,36 @@
 
 #include <SDL.h>
 #include <SDL_net.h>
+#include <xkbcommon/xkbcommon-compose.h>
+#include <locale.h>
+
+// Note, this is a special Linux Kernal file documenting the event
+// codes of several user input devices, notably the general Linux user
+// keyboard. Typically it can be found with other linux header files
+// at: /usr/include/linux/input-event-codes.h depending of course on
+// how your specific distribution is set up.
+// 
+// The .h file consists of defines (i.e. #define) and comments only,
+// therefor it has no dependancies. C defines are removed very seldom,
+// or ever. So, it's not vital that it be in sync with the version of
+// Linux that this application runs on, or indeed even that it's
+// running on linux.
+#include "input-event-codes.h"
 
 #include "../args.h"
+#include "interactive-sdl.h"
 
 typedef uint32_t uint32;
 typedef uint16_t uint16;
 typedef uint8_t uint8;
+typedef enum xkb_state_component state_component_enum;
 
 #define nil NULL
 
 
 #define WIDTH 576
 #define HEIGHT 454
+#define EVDEV_OFFSET 8
 
 char *argv0;
 
@@ -153,7 +171,7 @@ resize(void)
 {
 	int w, h;
 	SDL_GetWindowSize(window, &w, &h);
-//	printf("resize %d %d\n", w, h);
+	//	printf("resize %d %d\n", w, h);
 	texrect.x = (w-1024)/2;
 	texrect.y = (h-1024)/2;
 
@@ -188,7 +206,7 @@ draw(void)
 		updatebuf = 0;
 		updatefb();
 		SDL_UpdateTexture(screentex, nil,
-				finalfb, WIDTH*scale*sizeof(uint32));
+				  finalfb, WIDTH*scale*sizeof(uint32));
 		updatescreen = 1;
 	}
 	if(updatescreen){
@@ -232,7 +250,7 @@ readn(TCPsocket s, void *data, int n)
 }
 
 /* Map SDL scancodes to Knight keyboard codes as best we can */
-int scancodemap[SDL_NUM_SCANCODES];
+unsigned int scancodemap[SDL_NUM_SCANCODES];
 
 void
 initkeymap(void)
@@ -310,6 +328,95 @@ initkeymap(void)
 	scancodemap[SDL_SCANCODE_SPACE] = 077;
 }
 
+
+int16_t sdl_to_xkb_scancodemap[KEY_CNT];
+
+
+void
+init_sdl_to_xkb_scancodemap(void)
+{
+	int i;
+	for(i = 0; i <= KEY_MAX; i++)
+		sdl_to_xkb_scancodemap[i] = -1;
+
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_F12] = KEY_F12;	/* BREAK */
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_F2] = KEY_F2;	/* ESC */
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_1] = KEY_1;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_2] = KEY_2;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_3] = KEY_3;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_4] = KEY_4;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_5] = KEY_5;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_6] = KEY_6;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_7] = KEY_7;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_8] = KEY_8;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_9] = KEY_9;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_0] = KEY_0;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_MINUS] = KEY_MINUS;	/* - = */
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_EQUALS] = KEY_EQUAL;	/* @ ` */
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_GRAVE] = KEY_GRAVE;	/* ^ ~ */
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_BACKSPACE] = KEY_BACKSPACE;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_F1] = KEY_F1;	/* CALL */
+
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_F4] = KEY_F4;	/* CLEAR */
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_TAB] = KEY_TAB;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_ESCAPE] = KEY_ESC; /* ALT MODE */
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_Q] = KEY_Q;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_W] = KEY_W;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_E] = KEY_E;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_R] = KEY_R;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_T] = KEY_T;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_Y] = KEY_Y;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_U] = KEY_U;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_I] = KEY_I;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_O] = KEY_O;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_P] = KEY_P;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_LEFTBRACKET] = KEY_LEFTBRACE;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_RIGHTBRACKET] = KEY_RIGHTBRACE;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_BACKSLASH] = KEY_BACKSLASH;
+	// / inf
+	// +- delta
+	// O+ gamma
+
+	// FORM
+	// VTAB
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_DELETE] = KEY_DELETE;	/* RUBOUT */
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_A] = KEY_A;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_S] = KEY_S;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_D] = KEY_D;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_F] = KEY_F;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_G] = KEY_G;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_H] = KEY_H;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_J] = KEY_J;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_K] = KEY_K;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_L] = KEY_L;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_SEMICOLON] = KEY_SEMICOLON;	/* ; + */
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_APOSTROPHE] = KEY_APOSTROPHE;	/* : * */
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_RETURN] = KEY_ENTER;
+
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_Z] = KEY_Z;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_X] = KEY_X;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_C] = KEY_C;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_V] = KEY_V;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_B] = KEY_B;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_N] = KEY_N;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_M] = KEY_M;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_COMMA] = KEY_COMMA;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_PERIOD] = KEY_DOT;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_SLASH] = KEY_SLASH;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_SPACE] = KEY_SPACE;
+
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_SPACE] = KEY_LEFTALT;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_SPACE] = KEY_SPACE;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_SPACE] = KEY_CAPSLOCK;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_SPACE] = KEY_RIGHTCTRL;
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_SPACE] = KEY_LEFTCTRL;
+
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_LGUI] = KEY_LEFTMETA;	
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_RGUI] = KEY_RIGHTMETA;	
+	sdl_to_xkb_scancodemap[SDL_SCANCODE_APPLICATION] = KEY_COMPOSE;	
+}
+
+
 /* These bits are directly sent to the 11 */
 enum {
 	MOD_RSHIFT = 0100,
@@ -327,7 +434,7 @@ enum {
 #define MOD_CTRL (MOD_LCTRL | MOD_RCTRL)
 
 /* Map key symbols to Knight keyboard codes as best we can */
-int symbolmap[128];
+unsigned int symbolmap[128];
 
 void
 initsymbolmap(void)
@@ -468,8 +575,8 @@ int
 texty_symbol(int key)
 {
 	// Control characters don't generate TextInput.
-	if(curmod & MOD_CTRL)
-        	return 0;
+	/* if(curmod & MOD_CTRL) */
+        /* 	return 0; */
 
 	// Nor do these function keys.
 	switch(key){
@@ -523,14 +630,14 @@ provide_scancode(SDL_Keysym keysym)
 	memset(char_buffer, 0, 1024);
 	// Danger! buffer overflow.
 	sprintf(char_buffer, "Computed scancode: %i, keysym.scancode: %i\n",
-	       computed_scancode,
-	       keysym.scancode);
+		computed_scancode,
+		keysym.scancode);
 	// log_to_file(char_buffer);
 	return use_scancode ? keysym.scancode : computed_scancode;
 }
 
 void
-keydown(SDL_Keysym keysym, Uint8 repeat)
+keydown(SDL_Keysym keysym, Uint8 repeat, char c)
 {
 	int key;
 	SDL_Scancode scancode = provide_scancode(keysym);
@@ -572,25 +679,30 @@ keydown(SDL_Keysym keysym, Uint8 repeat)
 		uint32 f = SDL_GetWindowFlags(window) &
 			SDL_WINDOW_FULLSCREEN_DESKTOP;
 		SDL_SetWindowFullscreen(window,
-			f ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP);
+					f ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP);
 	}
 
 	// Some, but not all, keys come as both KeyboardEvent and
 	// TextInput. Ignore the latter kind here.
-	if(texty(scancode))
+	if(texty(scancode) && !(curmod & MOD_CTRL)) {
+		printf("unmodded text\n");
 		return;
-
-	// key = scancodemap[scancode];
-	key = scancodemap[SDL_GetScancodeFromKey(keysym.sym)];
-
-	char message_buffer[1024];
-	memset(message_buffer, '\0', 1024);
-	sprintf(message_buffer,
-		"Control character? key: %i, scancode: %i\n",
-		keysym.scancode,
-		SDL_GetScancodeFromKey(keysym.sym));
-		
-	log_to_file(message_buffer);
+	} else if (texty(scancode) && (curmod & MOD_CTRL)) {
+		// symbolmap characters are only ever modified with
+		// MOD_LSHIFT, this strips that out, giving us an
+		// effective mapping of character to PDP-11
+		// keycode. Note that, for example, 'a' and 'A' will
+		// both have the keycode 047.
+		key = (symbolmap[c] & ~((unsigned int) MOD_LSHIFT));
+		printf("Control modified c %d, symbolmap[c] %d; ~MOD_LSHIFT %d\n",
+		       c,
+		       symbolmap[c],
+		       ~((unsigned int) MOD_LSHIFT));
+	} else {
+		// key = scancodemap[scancode];
+		key = scancodemap[SDL_GetScancodeFromKey(keysym.sym)];
+		printf("misc. modifier key %d\n", key);
+	}
 
 	if(key < 0)
 		return;
@@ -600,7 +712,6 @@ keydown(SDL_Keysym keysym, Uint8 repeat)
 	msgheader(largebuf, MSG_KEYDN, 3);
 	w2b(largebuf+3, key);
 	writen(sock, largebuf, 5);
-//	printf("down: %o\n", key);
 }
 
 void
@@ -636,7 +747,7 @@ keyup(SDL_Keysym keysym)
 		case SDL_SCANCODE_RALT: curmod &= ~MOD_RMETA; break;
 		case SDL_SCANCODE_CAPSLOCK: curmod ^= MOD_SLOCK; break;
 		}
-//	printf("up: %d %o %o\n", scancode, scancodemap[scancode], curmod);
+	//	printf("up: %d %o %o\n", scancode, scancodemap[scancode], curmod);
 }
 
 void
@@ -659,8 +770,8 @@ unpackfb(uint8 *src, int x, int y, int w, int h)
 		for(j = 0; j < w; j++){
 			if(j%16 == 0){
 				wd = b2w(src);
-if(keystate[SDL_SCANCODE_F5] && wd != 0)
-printf("%d,%d: %o\n", i, j, wd);
+				if(keystate[SDL_SCANCODE_F5] && wd != 0)
+					printf("%d,%d: %o\n", i, j, wd);
 				src += 2;
 			}
 			dst[j] = wd&0100000 ? fg : bg;
@@ -836,29 +947,239 @@ log_event(SDL_Event event) {
 	        char buffer[1024];
 		sprintf(buffer, "textinput: %s\n", event.text.text);
 		log_to_file(buffer);
-	        }
+	}
 		break;
 	case SDL_KEYDOWN:
 	case SDL_KEYUP:
-	{
-		char message_buffer[1024];
-		memset(message_buffer, '\0', 1024);
-		#define FORMAT_STRING "key symbol: %i, mod: %o\n"
-		// Should we ignore on (event.key.repeat != 0) or
-		// perhaps only acknowlege every 5th or 10th one, so
-		// as to not overwhelm our PDP-11?
-		sprintf(message_buffer,
-			(event.type == SDL_KEYDOWN) ?
-			"SDL_KEYDOWN, " FORMAT_STRING :
-			"SDL_KEYUP, " FORMAT_STRING,
-			event.key.keysym.sym,
-			event.key.keysym.mod);
-		log_to_file(message_buffer);
-	}
-	break;
+		{
+			char message_buffer[1024];
+			memset(message_buffer, '\0', 1024);
+#define FORMAT_STRING "key symbol: %i, mod: %o\n"
+			// Should we ignore on (event.key.repeat != 0) or
+			// perhaps only acknowlege every 5th or 10th one, so
+			// as to not overwhelm our PDP-11?
+			sprintf(message_buffer,
+				(event.type == SDL_KEYDOWN) ?
+				"SDL_KEYDOWN, " FORMAT_STRING :
+				"SDL_KEYUP, " FORMAT_STRING,
+				event.key.keysym.sym,
+				event.key.keysym.mod);
+			log_to_file(message_buffer);
+		}
+		break;
 	}
 }
 
+
+void
+tools_print_state_changes_alt(state_component_enum changed)
+{
+	if (changed == 0)
+		return;
+
+	printf("changed [ ");
+	if (changed & XKB_STATE_LAYOUT_EFFECTIVE)
+		printf("effective-layout ");
+
+	if (changed & XKB_STATE_LAYOUT_DEPRESSED)
+		printf("depressed-layout ");
+
+	if (changed & XKB_STATE_LAYOUT_LATCHED)
+		printf("latched-layout ");
+
+	if (changed & XKB_STATE_LAYOUT_LOCKED)
+		printf("locked-layout ");
+
+	if (changed & XKB_STATE_MODS_EFFECTIVE)
+		printf("effective-mods ");
+
+	if (changed & XKB_STATE_MODS_DEPRESSED)
+		printf("depressed-mods ");
+
+	if (changed & XKB_STATE_MODS_LATCHED)
+		printf("latched-mods ");
+
+	if (changed & XKB_STATE_MODS_LOCKED)
+		printf("locked-mods ");
+
+	if (changed & XKB_STATE_LEDS)
+		printf("leds ");
+	printf("]\n");
+}
+
+
+
+
+// text_input_text is char[32]
+void
+process_sdl_text_input(SDL_Event sdl_event,
+		       char *sdl_text_input_text_ptr)
+{
+	memcpy(sdl_text_input_text_ptr, sdl_event.text.text, 32);
+}
+
+
+// Note, this should only be called when not composing, e.g.
+// if (status != XKB_COMPOSE_COMPOSING && status != XKB_COMPOSE_CANCELLED)
+
+void
+get_sdl_keycode_from_unicode(struct xkb_state *state,
+			     struct xkb_compose_state *compose_state,
+			     xkb_keycode_t keycode,
+			     char *s,
+			     const xkb_keysym_t **xkb_keysyms_ptr_ptr,
+			     xkb_keysym_t *xkb_keysym_ptr,
+			     int *nsyms_ptr)
+{
+    struct xkb_keymap *keymap;
+
+    xkb_keysym_t sym;
+    xkb_layout_index_t layout;
+
+    keymap = xkb_state_get_keymap(state);
+
+    int nsyms_tmp = xkb_state_key_get_syms(state, keycode, xkb_keysyms_ptr_ptr);
+
+    if (nsyms_tmp <= 0) {
+	    *nsyms_ptr = 0;
+	    return;
+    }
+
+    enum xkb_compose_status status = XKB_COMPOSE_NOTHING;
+    if (compose_state)
+        status = xkb_compose_state_get_status(compose_state);
+
+    if (status == XKB_COMPOSE_COMPOSED) {
+        sym = xkb_compose_state_get_one_sym(compose_state);
+        nsyms_tmp = 1;
+        xkb_compose_state_get_utf8(compose_state, s, 32);
+    } else if (nsyms_tmp == 1) {
+        sym = xkb_state_key_get_one_sym(state, keycode);
+        *xkb_keysym_ptr = sym;
+        xkb_state_key_get_utf8(state, keycode, s, sizeof(s));
+    }
+
+    return;
+}
+
+
+// Note the unicode buffer, chars, should be 32(?) bytes
+void
+process_sdl_keydown_event(struct xkb_state *xkb_state_ptr,
+			  struct xkb_compose_state *xkb_compose_state_ptr,
+			  uint8_t *chars,
+			  state_component_enum *changed_out_ptr,
+			  enum xkb_compose_status xkb_compose_status_in,
+			  enum xkb_compose_status *xkb_compose_status_out_ptr,
+			  SDL_Scancode sdl_scancode_in,
+			  SDL_Scancode *sdl_scancode_out_ptr)
+{
+	xkb_keycode_t xkb_scancode =
+		EVDEV_OFFSET + sdl_to_xkb_scancodemap[sdl_scancode_in];
+
+	
+	struct xkb_keymap *keymap = xkb_state_get_keymap(xkb_state_ptr);
+
+	xkb_keysym_t xkb_keysym =
+		xkb_state_key_get_one_sym(xkb_state_ptr, xkb_scancode);
+
+	printf("xkb_scancode [%d], xkb_keysym [%d]\n",
+	       xkb_scancode,
+	       xkb_keysym);
+	
+	xkb_compose_state_feed(xkb_compose_state_ptr, xkb_keysym);
+
+	enum xkb_compose_status xkb_compose_status_temp =
+		xkb_compose_state_get_status(xkb_compose_state_ptr);
+		
+	if (xkb_compose_status_temp != XKB_COMPOSE_COMPOSING &&
+	    xkb_compose_status_temp != XKB_COMPOSE_CANCELLED) {
+		unsigned char s[32];
+		int nsyms = 0;
+		const xkb_keysym_t *xkb_keysyms_ptr_ptr;
+		get_unicode_char(xkb_state_ptr,
+				 xkb_compose_state_ptr,
+				 xkb_scancode,
+				 chars,
+				 (const xkb_keysym_t **)&xkb_keysyms_ptr_ptr,
+				 &xkb_keysym,
+				 &nsyms);
+		printf("Unicode s [%d]\n", s[0]);
+	}
+
+	*xkb_compose_status_out_ptr =
+		xkb_compose_state_get_status(xkb_compose_state_ptr);
+
+	// Not 100% clear (to me) whether whether
+	// XKB_COMPOSE_COMPOSED, is really the end of the composition,
+	// or if aditional keys of a chord could still be pressed. If
+	// it is the end of a composition, how are multi chord keys
+	// handled?
+	if (*xkb_compose_status_out_ptr == XKB_COMPOSE_CANCELLED ||
+	    *xkb_compose_status_out_ptr == XKB_COMPOSE_COMPOSED) {
+		xkb_compose_state_reset(xkb_compose_state_ptr);
+		printf("resetting xkb compose state.\n");
+	}
+
+	*changed_out_ptr = xkb_state_update_key(xkb_state_ptr,
+						xkb_scancode,
+						XKB_KEY_DOWN);
+}
+
+// text_input_text is char[32]
+void
+process_sdl_keyup(SDL_Scancode sdl_scancode,
+		  struct xkb_state *xkb_state_ptr,
+		  struct xkb_compose_state *xkb_compose_state_ptr,
+		  state_component_enum *xkb_state_component_enum_out_ptr,
+		  enum xkb_compose_status *xkb_compose_status_ptr)
+{
+	xkb_keysym_t *sym_ptr;
+	uint16_t code;
+	int32_t value;
+	xkb_keycode_t xkb_scancode =
+		EVDEV_OFFSET + sdl_to_xkb_scancodemap[sdl_scancode];
+	
+	*xkb_compose_status_ptr =
+		xkb_compose_state_get_status(xkb_compose_state_ptr);
+
+	// Not 100% clear (to me) whether whether
+	// XKB_COMPOSE_COMPOSED, is really the end of the composition,
+	// or if aditional keys of a chord could still be pressed. If
+	// it is the end of a composition, how are multi chord keys
+	// handled?
+	if (*xkb_compose_status_ptr == XKB_COMPOSE_CANCELLED ||
+	    *xkb_compose_status_ptr == XKB_COMPOSE_COMPOSED)
+		xkb_compose_state_reset(xkb_compose_state_ptr);
+
+	*xkb_state_component_enum_out_ptr =
+		xkb_state_update_key(xkb_state_ptr,
+				     xkb_scancode,
+				     XKB_KEY_UP);
+}
+
+
+// return value 0 success -1 failure
+struct xkb_keymap*
+keymap_new(struct xkb_context *ctx_ptr)
+{
+	struct xkb_keymap *keymap_ptr = NULL;
+	struct xkb_rule_names rmlvo = {
+		.rules = NULL,
+		.model = "pc105",
+		.layout = "is",
+		.variant = "dvorak",
+		.options = "terminate:ctrl_alt_bksp"
+	};	
+	keymap_ptr = xkb_keymap_new_from_names(ctx_ptr, &rmlvo, 0);
+
+	if (!keymap_ptr) {
+		fprintf(stderr, "Failed to compile RMLVO");
+		return NULL;
+	} else {
+		return keymap_ptr;
+	}
+}
 
 int
 main(int argc, char *argv[])
@@ -874,36 +1195,71 @@ main(int argc, char *argv[])
 	SDLNet_Init();
 	SDL_StopTextInput();
 
+	if (interactive_sdl_init(0, NULL)) {
+		printf("Unable to initialize xkb\n");
+		exit(1);
+	}
+
+	struct xkb_context *ctx_ptr =
+		xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+	if (!ctx_ptr) {
+		fprintf(stderr, "Couldn't create xkb context\n");
+		exit(1);
+	}
+
+	struct xkb_keymap *keymap_ptr = keymap_new(ctx_ptr);
+	struct xkb_compose_table *xkb_compose_table_ptr = NULL;
+	char *locale_ptr = setlocale(LC_CTYPE, NULL);
+	
+        xkb_compose_table_ptr =
+		xkb_compose_table_new_from_locale(ctx_ptr,
+						  locale_ptr,
+						  XKB_COMPOSE_COMPILE_NO_FLAGS);
+        if (!xkb_compose_table_ptr) {
+		fprintf(stderr, "Couldn't create compose from locale\n");
+		exit(1);
+        }
+
+	struct xkb_state *xkb_state_ptr = NULL;
+	struct xkb_compose_state *xkb_compose_state_ptr = NULL;
+
+	if (init_keyboard(keymap_ptr,
+			  xkb_compose_table_ptr,
+			  &xkb_state_ptr,
+			  &xkb_compose_state_ptr)) {
+		printf("unable to initialize keyboard");
+		exit(1);
+	}	
 	port = 11100;
 	ARGBEGIN{
-	case 'p':
-		port = atoi(EARGF(usage()));
-		break;
-	case 'c':
-		p = EARGF(usage());
-		bg = strtol(p, &p, 16)<<8;
-		if(*p++ != ',') usage();
-		fg = strtol(p, &p, 16)<<8;
-		if(*p++ != '\0') usage();
-		break;
-	case 'B':
-		/* Backspace is Rubout. */
-		backspace = 046;
-		break;
-	case 'C':
-		ctrlslock++;
-		break;
-	case 'S':
-		initsymbolmap();
-		texty = texty_symbol;
-		SDL_StartTextInput();
-		break;
-	case 'M':
-		modmap++;
-		break;
-	case '2':
-		scale++;
-		break;
+		case 'p':
+			port = atoi(EARGF(usage()));
+			break;
+		case 'c':
+			p = EARGF(usage());
+			bg = strtol(p, &p, 16)<<8;
+			if(*p++ != ',') usage();
+			fg = strtol(p, &p, 16)<<8;
+			if(*p++ != '\0') usage();
+			break;
+		case 'B':
+			/* Backspace is Rubout. */
+			backspace = 046;
+			break;
+		case 'C':
+			ctrlslock++;
+			break;
+		case 'S':
+			initsymbolmap();
+			texty = texty_symbol;
+			SDL_StartTextInput();
+			break;
+		case 'M':
+			modmap++;
+			break;
+		case '2':
+			scale++;
+			break;
 	}ARGEND;
 
 	if(argc < 1)
@@ -912,6 +1268,7 @@ main(int argc, char *argv[])
 	host = argv[0];
 
 	initkeymap();
+	init_sdl_to_xkb_scancodemap();
 
 	sock = dial(host, port);
 
@@ -922,7 +1279,7 @@ main(int argc, char *argv[])
 	SDL_SetWindowTitle(window, "Knight TV");
 
 	screentex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888,
-			SDL_TEXTUREACCESS_STREAMING, WIDTH*scale, HEIGHT*scale);
+				      SDL_TEXTUREACCESS_STREAMING, WIDTH*scale, HEIGHT*scale);
 	texrect.x = 0;
 	texrect.y = 0;
 	texrect.w = WIDTH*scale;
@@ -944,23 +1301,68 @@ main(int argc, char *argv[])
 	th1 = SDL_CreateThread(readthread, "Read thread", nil);
 
 	running = 1;
+	enum xkb_compose_status xkb_compose_status = 0;
+	char sdl_text_input_text_ptr[32];
+	unsigned char chars[32];
+	memset(chars, '\0', sizeof(chars));
+
 	while(running){
 		if(SDL_WaitEvent(&event) < 0)
 			panic("SDL_PullEvent() error: %s\n", SDL_GetError());
-		log_event(event);
-		switch(event.type){
+
+		switch(event.type) {
 		case SDL_MOUSEBUTTONDOWN:
 			break;
-
 		case SDL_TEXTINPUT:
+			memset((void*)sdl_text_input_text_ptr,
+			       0,
+			       sizeof(sdl_text_input_text_ptr));
+			process_sdl_text_input(event, sdl_text_input_text_ptr);
 			textinput(event.text.text);
 			break;
 		case SDL_KEYDOWN:
-			keydown(event.key.keysym, event.key.repeat);
+			memset(chars, '\0', sizeof(chars));
+			if (!event.key.repeat) {
+				state_component_enum state_component_enum;
+				enum xkb_compose_status xkb_compose_status_out = 0;
+
+				struct xkb_compose_state *
+					xkb_compose_state_out_ptr;
+				SDL_Keycode sdl_keycode = event.key.keysym.sym;
+				SDL_Scancode sdl_scancode_in =
+					event.key.keysym.scancode;
+				SDL_Scancode sdl_scancode_out;
+				/* enum xkb_state_component sdl_mod = */
+				/* 	event.key.keysym.mod; */
+
+				process_sdl_keydown_event(xkb_state_ptr,
+							  xkb_compose_state_ptr,
+							  chars,
+							  &state_component_enum,
+							  xkb_compose_status,
+							  &xkb_compose_status_out,
+							  sdl_scancode_in,
+							  &sdl_scancode_out);
+
+				printf("Post process_sdl_keydown_event chars %d\n",
+					chars[0]);
+				xkb_compose_status = xkb_compose_status_out;
+			}
+			keydown(event.key.keysym, event.key.repeat, chars[0]);
 			break;
+
 		case SDL_KEYUP:
+			if (!event.key.repeat) {
+				state_component_enum xkb_state_component_enum = 0;
+				process_sdl_keyup(event.key.keysym.scancode,
+						  xkb_state_ptr,
+						  xkb_compose_state_ptr,
+						  &xkb_state_component_enum,
+						  &xkb_compose_status);
+			}
 			keyup(event.key.keysym);
 			break;
+
 		case SDL_QUIT:
 			running = 0;
 			break;
@@ -998,6 +1400,8 @@ main(int argc, char *argv[])
 	if (fd) {
 		fclose(fd);
 	}
-
+	interactive_sdl_translate_destroy();
 	return 0;
 }
+
+

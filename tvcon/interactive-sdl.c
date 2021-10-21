@@ -1,3 +1,4 @@
+
 /*
  * Copyright © 2012 Ran Benita <ran234@gmail.com>
  *
@@ -41,116 +42,184 @@
 
 #include <linux/input.h>
 
-#include "xkbcommon/xkbcommon.h"
+#include <xkbcommon/xkbcommon-compose.h>
 
 #include "tools-common.h"
 #include "interactive-sdl.h"
 
-struct keyboard {
-    struct xkb_state *state;
-    struct xkb_compose_state *compose_state;
-};
-
 // static bool terminate;
 static int evdev_offset = 8;
 static bool report_state_changes;
-static bool with_compose;
+static bool with_compose = true;
 static enum xkb_consumed_mode consumed_mode = XKB_CONSUMED_MODE_XKB;
 
 static int
 keyboard_new(struct xkb_keymap *keymap,
-             struct xkb_compose_table *compose_table, struct keyboard *out)
+             struct xkb_compose_table *compose_table,
+	     keyboard *keyboard_out_ptr)
 {
-    int ret;
-    struct xkb_state *state;
-    struct xkb_compose_state *compose_state = NULL;
+	struct xkb_state *xkb_state_out_ptr;
+	struct xkb_compose_state *xkb_compose_state_ptr;
+	init_keyboard(keymap,
+		      compose_table,
+		      &xkb_state_out_ptr,
+		      &xkb_compose_state_ptr);
+	keyboard_out_ptr->state = xkb_state_out_ptr;
+	keyboard_out_ptr->compose_state = xkb_compose_state_ptr;
+}
 
-    state = xkb_state_new(keymap);
-    if (!state) {
-      fprintf(stderr, "Couldn't create xkb state\n");
-        ret = -EFAULT;
-        goto err_fd;
-    }
 
-    if (with_compose) {
-        compose_state = xkb_compose_state_new(compose_table,
-                                              XKB_COMPOSE_STATE_NO_FLAGS);
-        if (!compose_state) {
-	  fprintf(stderr, "Couldn't create compose state\n");
-            ret = -EFAULT;
-            goto err_state;
-        }
-    }
+int
+init_keyboard(struct xkb_keymap *xkb_keymap_ptr,
+	      struct xkb_compose_table *compose_table,
+	      struct xkb_state **xkb_state_out_ptr_ptr,
+	      struct xkb_compose_state **compose_state_out_ptr_ptr)
+{
+	int ret = 0;
+	struct xkb_compose_state *compose_state_tmp_ptr = NULL;
 
-    out->state = state;
-    out->compose_state = compose_state;
-    return 0;
+	struct xkb_state *xkb_state_tmp_ptr = xkb_state_new(xkb_keymap_ptr);
+	if (!xkb_state_tmp_ptr) {
+		fprintf(stderr, "Couldn't create xkb state\n");
+		ret = -EFAULT;
+		goto err_fd;
+	}
 
-    xkb_compose_state_unref(compose_state);
-err_state:
-    xkb_state_unref(state);
-err_fd:
-    return ret;
+	if (with_compose) {
+		compose_state_tmp_ptr = xkb_compose_state_new(compose_table,
+							      XKB_COMPOSE_STATE_NO_FLAGS);
+		if (!compose_state_tmp_ptr) {
+			fprintf(stderr, "Couldn't create compose state\n");
+			ret = -EFAULT;
+			goto err_state;
+		}
+	}
+
+	*xkb_state_out_ptr_ptr = xkb_state_tmp_ptr;
+	*compose_state_out_ptr_ptr = compose_state_tmp_ptr;
+    
+	return ret;
+    
+ err_state:
+	xkb_state_unref(xkb_state_tmp_ptr);
+
+ err_fd:
+	return ret;
 }
 
 static void get_keyboards(struct xkb_keymap *keymap,
-		   struct xkb_compose_table *compose_table,
-		   struct keyboard *kbd)
+			  struct xkb_compose_table *compose_table,
+			  keyboard *keyboard_ptr)
 {
-  int ret;
+	int ret;
 
-        ret = keyboard_new(keymap, compose_table, kbd);
+        ret = keyboard_new(keymap, compose_table, keyboard_ptr);
         if (ret) {
-	  fprintf(stderr, "Couldn't open Skipping.\n");
+		fprintf(stderr, "Couldn't open Skipping.\n");
         }
 }
 
-/* The meaning of the input_event 'value' field. */
-enum {
-    KEY_STATE_RELEASE = 0,
-    KEY_STATE_PRESS = 1,
-    KEY_STATE_REPEAT = 2,
-};
 
-static void
-process_event(struct keyboard *kbd, uint16_t code, int32_t value)
+// Note, this should only be called when not composing, e.g.
+// if (status != XKB_COMPOSE_COMPOSING && status != XKB_COMPOSE_CANCELLED)
+
+void
+get_unicode_char(struct xkb_state *state,
+		 struct xkb_compose_state *compose_state,
+		 xkb_keycode_t keycode,
+		 char *s,
+		 const xkb_keysym_t **xkb_keysyms_ptr_ptr,
+		 xkb_keysym_t *xkb_keysym_ptr,
+		 int *nsyms_ptr)
 {
-    xkb_keycode_t keycode = evdev_offset + code;
     struct xkb_keymap *keymap;
-    enum xkb_state_component changed;
-    enum xkb_compose_status status;
 
-    keymap = xkb_state_get_keymap(kbd->state);
+    xkb_keysym_t sym;
+    xkb_layout_index_t layout;
 
-    if (value == KEY_STATE_REPEAT && !xkb_keymap_key_repeats(keymap, keycode))
-        return;
+    keymap = xkb_state_get_keymap(state);
 
-    if (with_compose && value != KEY_STATE_RELEASE) {
-        xkb_keysym_t keysym = xkb_state_key_get_one_sym(kbd->state, keycode);
-        xkb_compose_state_feed(kbd->compose_state, keysym);
+    int nsyms_tmp = xkb_state_key_get_syms(state, keycode, xkb_keysyms_ptr_ptr);
+
+    if (nsyms_tmp <= 0) {
+	    *nsyms_ptr = 0;
+	    return;
     }
 
-    if (value != KEY_STATE_RELEASE)
-        tools_print_keycode_state(kbd->state, kbd->compose_state, keycode,
-                                  consumed_mode);
+    enum xkb_compose_status status = XKB_COMPOSE_NOTHING;
+    if (compose_state)
+        status = xkb_compose_state_get_status(compose_state);
 
-    if (with_compose) {
-        status = xkb_compose_state_get_status(kbd->compose_state);
-        if (status == XKB_COMPOSE_CANCELLED || status == XKB_COMPOSE_COMPOSED)
-            xkb_compose_state_reset(kbd->compose_state);
+    if (status == XKB_COMPOSE_COMPOSED) {
+        sym = xkb_compose_state_get_one_sym(compose_state);
+        nsyms_tmp = 1;
+        xkb_compose_state_get_utf8(compose_state, s, 32);
+    } else if (nsyms_tmp == 1) {
+        sym = xkb_state_key_get_one_sym(state, keycode);
+        *xkb_keysym_ptr = sym;
+        xkb_state_key_get_utf8(state, keycode, s, 32);
     }
 
-    if (value == KEY_STATE_RELEASE)
-        changed = xkb_state_update_key(kbd->state, keycode, XKB_KEY_UP);
-    else
-        changed = xkb_state_update_key(kbd->state, keycode, XKB_KEY_DOWN);
+    return;
+}
 
-    if (report_state_changes)
-        tools_print_state_changes(changed);
+// Last unicode characters retrieved. (How do we know no overflow?)
+uint8_t g_s[16];
+
+
+void
+process_event(keyboard *kbd, uint16_t code, int32_t value)
+{
+	xkb_keycode_t keycode = evdev_offset + code;
+	struct xkb_keymap *keymap;
+	enum xkb_state_component changed;
+	enum xkb_compose_status status;
+
+	keymap = xkb_state_get_keymap(kbd->state);
+
+	if (value == KEY_STATE_REPEAT && !xkb_keymap_key_repeats(keymap, keycode))
+		return;
+
+	if (value != KEY_STATE_RELEASE) {
+		xkb_keysym_t keysym;
+		if (with_compose) {
+			keysym = xkb_state_key_get_one_sym(kbd->state, keycode);
+			xkb_compose_state_feed(kbd->compose_state, keysym);
+		}
+
+		char s[32];
+		xkb_keysym_t *keysym_ptr = &keysym;
+		const xkb_keysym_t **keysyms = (const xkb_keysym_t **) &keysym_ptr;
+		int nsyms;
+		get_unicode_char(kbd->state,
+				 kbd->compose_state,
+				 keycode,
+				 s,
+				 keysyms,
+				 &keysym,
+				 &nsyms);
+		
+		tools_print_keycode_state(kbd->state, kbd->compose_state,
+					  keycode, XKB_CONSUMED_MODE_XKB);
+	}
+
+	if (with_compose) {
+		status = xkb_compose_state_get_status(kbd->compose_state);
+		if (status == XKB_COMPOSE_CANCELLED || status == XKB_COMPOSE_COMPOSED)
+			xkb_compose_state_reset(kbd->compose_state);
+	}
+
+	if (value == KEY_STATE_RELEASE)
+		changed = xkb_state_update_key(kbd->state, keycode, XKB_KEY_UP);
+	else
+		changed = xkb_state_update_key(kbd->state, keycode, XKB_KEY_DOWN);
+
+	if (report_state_changes)
+		tools_print_state_changes(changed);
 }
 
 
-struct keyboard g_kbd;
+keyboard g_kbd;
 struct xkb_context *g_ctx = NULL;
 struct xkb_compose_table *g_compose_table = NULL;
 struct xkb_keymap *g_keymap = NULL;
@@ -260,14 +329,13 @@ interactive_sdl_init(int argc, char *argv[])
                                           XKB_KEYMAP_FORMAT_TEXT_V1,
                                           XKB_KEYMAP_COMPILE_NO_FLAGS);
         fclose(file);
-    }
-    else {
+    } else {
         struct xkb_rule_names rmlvo = {
-            .rules = (rules == NULL || rules[0] == '\0') ? NULL : rules,
-            .model = (model == NULL || model[0] == '\0') ? NULL : model,
-            .layout = (layout == NULL || layout[0] == '\0') ? NULL : layout,
-            .variant = (variant == NULL || variant[0] == '\0') ? NULL : variant,
-            .options = (options == NULL || options[0] == '\0') ? NULL : options
+            .rules = "evdev",
+            .model = "pc105",
+            .layout = "us",
+            .variant = "dvorak",
+            .options = NULL,
         };
 
         if (!rules && !model && !layout && !variant && !options)
@@ -300,42 +368,37 @@ interactive_sdl_init(int argc, char *argv[])
     }
 
     get_keyboards(g_keymap, g_compose_table, &g_kbd);
-    // if (!kbds) {
-    //     goto out;
-    // }
 
-    // act.sa_handler = sigintr_handler;
     sigemptyset(&act.sa_mask);
     act.sa_flags = 0;
-    /* sigaction(SIGINT, &act, NULL); */
-    /* sigaction(SIGTERM, &act, NULL); */
 
+    return 0;
+    
  out:
     xkb_compose_table_unref(g_compose_table);
     xkb_keymap_unref(g_keymap);
     xkb_context_unref(g_ctx);
-
-    return ret;
+    return 1;
 }
 
 int
-interactive_sdl_translate()
+interactive_sdl_translate(uint16_t code, int32_t value)
 {
+	tools_disable_stdin_echo();
+	process_event(&g_kbd, code, value);
+	tools_enable_stdin_echo();
 
-  tools_disable_stdin_echo();
-  process_event(&g_kbd, EV_KEY, 10, KEY_STATE_PRESS);
-    tools_enable_stdin_echo();
+	return 0;
+}
 
-    xkb_state_unref(g_kbd.state);
-    xkb_compose_state_unref(g_kbd.compose_state);
+void
+interactive_sdl_translate_destroy()
+{
+	xkb_state_unref(g_kbd.state);
+	xkb_compose_state_unref(g_kbd.compose_state);
+	xkb_compose_table_unref(g_compose_table);
+	xkb_keymap_unref(g_keymap);
+	xkb_context_unref(g_ctx);
 
-    // keyboard_free(kbd);
-    printf("all done outputting transaltion!");
-
-out:
-    xkb_compose_table_unref(g_compose_table);
-    xkb_keymap_unref(g_keymap);
-    xkb_context_unref(g_ctx);
-
-    return 0;
+	return;
 }
